@@ -1,0 +1,670 @@
+<title>電解質モニター</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+JP:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: 検査レポート用紙の罫と、ベッドサイドモニターの「要約→波形→詳細」の順。左に推移、右に選択時点の解析 */
+:root {
+  --bg: #f4f6f8;
+  --surface: #ffffff;
+  --ink: #17202b;
+  --ink-2: #4a5666;
+  --ink-3: #7a8594;
+  --rule: #d9dfe6;
+  --band: #e8eef5;
+  --accent: #1f5c8c;
+  --accent-soft: #dbe8f3;
+  --ok: #2f7d4f;    --ok-bg: #e2f2e8;
+  --watch: #8a6400; --watch-bg: #fbf0d2;
+  --warn: #b5530f;  --warn-bg: #fbe5d5;
+  --crit: #b3242c;  --crit-bg: #f8dcdd;
+  --font-body: "IBM Plex Sans JP", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
+  --font-num: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --r: 6px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11161c; --surface: #19212a; --ink: #e6ebf0; --ink-2: #aab4c0; --ink-3: #7d8896;
+    --rule: #2c3743; --band: #1f2a35; --accent: #7fb3e0; --accent-soft: #1d3247;
+    --ok: #7bc896; --ok-bg: #18301f; --watch: #e2c063; --watch-bg: #322a12;
+    --warn: #f0a06a; --warn-bg: #3a2414; --crit: #f2848a; --crit-bg: #3d1c1f;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11161c; --surface: #19212a; --ink: #e6ebf0; --ink-2: #aab4c0; --ink-3: #7d8896;
+  --rule: #2c3743; --band: #1f2a35; --accent: #7fb3e0; --accent-soft: #1d3247;
+  --ok: #7bc896; --ok-bg: #18301f; --watch: #e2c063; --watch-bg: #322a12;
+  --warn: #f0a06a; --warn-bg: #3a2414; --crit: #f2848a; --crit-bg: #3d1c1f;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.6 var(--font-body); }
+.wrap { max-width: 1240px; margin: 0 auto; padding-inline: 16px; padding-block: 16px 48px; display: grid; gap: 16px; }
+h1, h2, h3 { margin: 0; text-wrap: balance; line-height: 1.3; }
+h1 { font-size: 22px; font-weight: 700; letter-spacing: .02em; }
+h2 { font-size: 15px; font-weight: 700; }
+h3 { font-size: 13px; font-weight: 700; color: var(--ink-2); }
+.num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+.muted { color: var(--ink-3); }
+.small { font-size: 12px; }
+button, select, input, textarea { font: inherit; color: inherit; }
+button {
+  border: 1px solid var(--rule); background: var(--surface); border-radius: var(--r);
+  padding: 6px 12px; cursor: pointer;
+}
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); color: var(--surface); border-color: var(--accent); }
+button.danger { color: var(--crit); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+header.top { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px; border-bottom: 2px solid var(--ink); padding-bottom: 10px; }
+header.top .sub { color: var(--ink-2); font-size: 12px; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.controls label { font-size: 12px; color: var(--ink-2); }
+select { border: 1px solid var(--rule); border-radius: var(--r); padding: 6px 8px; background: var(--surface); }
+
+.banner { background: var(--accent-soft); border-radius: var(--r); padding: 8px 12px; font-size: 13px; }
+
+.panel { background: var(--surface); border: 1px solid var(--rule); border-radius: var(--r); padding: 14px 16px; min-width: 0; }
+.panel > h2 { margin-bottom: 10px; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; align-items: baseline; }
+
+/* アラート */
+.alerts { display: grid; gap: 6px; }
+.alert { display: grid; grid-template-columns: auto auto 1fr; gap: 10px; align-items: baseline; padding: 6px 10px; border-radius: 4px; border-left: 4px solid; }
+.alert .when { font-size: 12px; color: var(--ink-2); }
+.alert .src { font-size: 11px; color: var(--ink-3); }
+.lv-crit { background: var(--crit-bg); border-color: var(--crit); }
+.lv-warn { background: var(--warn-bg); border-color: var(--warn); }
+.lv-watch { background: var(--watch-bg); border-color: var(--watch); }
+.lv-ok { background: var(--ok-bg); border-color: var(--ok); }
+.pill { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
+.pill.crit { color: var(--crit); background: var(--crit-bg); }
+.pill.warn { color: var(--warn); background: var(--warn-bg); }
+.pill.watch { color: var(--watch); background: var(--watch-bg); }
+.pill.ok { color: var(--ok); background: var(--ok-bg); }
+
+.main { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 900px) { .main { grid-template-columns: 1fr; } }
+
+/* 推移チャート */
+.charts { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px 16px; }
+.chart { min-width: 0; }
+.chart .head { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+.chart .head b { font-size: 13px; }
+.chart .last { font-family: var(--font-num); font-size: 13px; }
+.chart svg { width: 100%; height: auto; display: block; overflow: visible; }
+.chart .axis { fill: var(--ink-3); font: 10px var(--font-num); }
+.chart .grid { stroke: var(--rule); stroke-width: 1; }
+.chart .refband { fill: var(--band); }
+.chart .line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
+.chart .pt { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
+.chart .pt.out { fill: var(--warn); }
+.chart .pt.sel { stroke: var(--ink); stroke-width: 2; }
+.chart .rcv { fill: none; stroke: var(--ink); stroke-width: 1.5; stroke-dasharray: 2 2; }
+.chart .hit { fill: transparent; cursor: pointer; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--ink-2); margin-top: 10px; }
+.legend i { display: inline-block; vertical-align: middle; margin-right: 4px; }
+.tip { position: fixed; pointer-events: none; z-index: 10; background: var(--ink); color: var(--bg); font-size: 12px; padding: 6px 8px; border-radius: 4px; max-width: 260px; }
+
+/* 解析 */
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 3px 14px; font-size: 13px; }
+.kv dt { color: var(--ink-2); }
+.kv dd { margin: 0; font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+.section { display: grid; gap: 8px; padding-block: 10px; border-top: 1px solid var(--rule); }
+.section:first-of-type { border-top: 0; padding-top: 0; }
+.dx { display: grid; gap: 4px; }
+.dx .p { font-weight: 700; }
+ul.find { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+ul.find li { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: baseline; }
+ul.find .src { display: block; font-size: 11px; color: var(--ink-3); }
+.bars { display: grid; gap: 4px; }
+.bar { display: grid; grid-template-columns: 9em 1fr 4.5em; gap: 8px; align-items: center; font-size: 12px; }
+.bar .track { position: relative; height: 12px; background: var(--band); border-radius: 2px; }
+.bar .track .mid { position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--ink-3); }
+.bar .track .fill { position: absolute; top: 0; bottom: 0; border-radius: 2px; }
+.bar .fill.neg { background: var(--warn); }
+.bar .fill.pos { background: var(--accent); }
+.bar .v { text-align: right; font-family: var(--font-num); }
+
+/* 表 */
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 12px; }
+th, td { padding: 5px 8px; border-bottom: 1px solid var(--rule); text-align: right; white-space: nowrap; }
+th { color: var(--ink-2); font-weight: 500; position: sticky; top: 0; background: var(--surface); }
+th:first-child, td:first-child { text-align: left; }
+td { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+tr.sel td { background: var(--accent-soft); }
+tbody tr { cursor: pointer; }
+td.lo { color: var(--accent); font-weight: 500; }
+td.hi { color: var(--warn); font-weight: 500; }
+td .d { display: block; font-size: 10px; color: var(--ink-3); }
+td .d.sig { color: var(--ink); font-weight: 700; }
+
+/* 入力 */
+details.panel > summary { cursor: pointer; font-weight: 700; font-size: 15px; }
+details.panel[open] > summary { margin-bottom: 12px; }
+.form { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px 12px; }
+.form .f { display: grid; gap: 2px; }
+.form label { font-size: 12px; color: var(--ink-2); }
+.form label small { color: var(--ink-3); }
+.form input { border: 1px solid var(--rule); border-radius: 4px; padding: 5px 8px; background: var(--bg); font-family: var(--font-num); width: 100%; min-width: 0; }
+.form .wide { grid-column: span 2; }
+.rowbtn { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; align-items: center; }
+.msg { font-size: 12px; color: var(--ok); }
+.msg.err { color: var(--crit); }
+textarea { width: 100%; min-height: 120px; border: 1px solid var(--rule); border-radius: 4px; padding: 8px; background: var(--bg); font: 12px var(--font-num); }
+.confirm { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; }
+
+footer { font-size: 12px; color: var(--ink-2); display: grid; gap: 8px; border-top: 1px solid var(--rule); padding-top: 12px; }
+footer ol { margin: 0; padding-left: 1.4em; display: grid; gap: 2px; }
+@media (prefers-reduced-motion: no-preference) { .alert, .pt { transition: opacity .15s; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>電解質モニター</h1>
+      <div class="sub">酸塩基（Boston＋Stewart）・電解質の単一時点解析と、補正速度・RCV に基づく経時監視</div>
+    </div>
+    <div class="controls">
+      <label for="dataset">データ</label>
+      <select id="dataset">
+        <option value="mine">自分の記録</option>
+        <option value="ex-dka">例1：DKA 治療経過（架空）</option>
+        <option value="ex-hypona">例2：低Na血症の補正（架空）</option>
+      </select>
+    </div>
+  </header>
+
+  <div class="banner" id="banner" hidden></div>
+
+  <section class="panel">
+    <h2><span>アラート</span><span class="small muted" id="alertCount"></span></h2>
+    <div class="alerts" id="alerts"></div>
+  </section>
+
+  <div class="main">
+    <section class="panel">
+      <h2><span>推移</span><span class="small muted">点を選ぶと右に解析を表示</span></h2>
+      <div class="charts" id="charts"></div>
+      <div class="legend">
+        <span><i style="width:18px;height:10px;background:var(--band)"></i>基準範囲</span>
+        <span><svg width="12" height="12" aria-hidden="true"><circle cx="6" cy="6" r="4" fill="var(--warn)"></circle></svg>基準範囲外</span>
+        <span><svg width="14" height="14" aria-hidden="true"><circle cx="7" cy="7" r="6" fill="none" stroke="var(--ink)" stroke-width="1.5" stroke-dasharray="2 2"></circle></svg>前回から RCV を超える変化</span>
+      </div>
+    </section>
+
+    <section class="panel" id="detail">
+      <h2><span>解析</span><span class="small muted num" id="detailTime"></span></h2>
+      <div id="detailBody"></div>
+    </section>
+  </div>
+
+  <section class="panel">
+    <h2><span>記録一覧</span><span class="small muted">下段の小さな数字は前回からの変化（太字は RCV 超）</span></h2>
+    <div class="tablewrap"><table id="table"></table></div>
+  </section>
+
+  <details class="panel" id="entryPanel" open>
+    <summary>検査値を追加</summary>
+    <form id="entry" autocomplete="off">
+      <div class="form" id="formFields"></div>
+      <div class="rowbtn">
+        <button type="submit" class="primary" id="saveBtn">記録に追加</button>
+        <button type="button" id="clearForm">入力を消去</button>
+        <span class="msg" id="formMsg" role="status"></span>
+      </div>
+    </form>
+  </details>
+
+  <details class="panel" id="settingsPanel">
+    <summary>設定（基準範囲・補正速度・RCV）</summary>
+    <form id="settings">
+      <h3>判定</h3>
+      <div class="form" style="margin-block:8px 14px">
+        <div class="f"><label for="s-agRef">基準AG <small>ΔΔ用</small></label><input id="s-agRef" type="number" step="0.1"></div>
+        <div class="f"><label for="s-agUpper">AG 開大の上限</label><input id="s-agUpper" type="number" step="0.1"></div>
+        <div class="f"><label for="s-glucoseFactor">補正Na 係数 <small>2.4 / 1.6</small></label><input id="s-glucoseFactor" type="number" step="0.1"></div>
+        <div class="f"><label for="s-naLimit24h">低Na 補正上限 <small>mmol/L/24h</small></label><input id="s-naLimit24h" type="number" step="1"></div>
+        <div class="f"><label for="s-naHighRisk">ODS 高リスク <small>上限 8</small></label><select id="s-naHighRisk"><option value="0">いいえ</option><option value="1">はい</option></select></div>
+      </div>
+      <h3>基準範囲（下限 / 上限）</h3>
+      <div class="form" id="rangeFields" style="margin-block:8px 14px"></div>
+      <h3>RCV（CVI % / CVA %）</h3>
+      <div class="form" id="bvFields" style="margin-block:8px 0"></div>
+      <div class="rowbtn">
+        <button type="submit" class="primary">設定を保存</button>
+        <button type="button" id="resetSettings">既定値に戻す</button>
+        <span class="msg" id="settingsMsg" role="status"></span>
+      </div>
+      <p class="small muted">基準範囲は施設・測定法で異なります。AG は イオン選択電極法では低めに出るため、自施設の値に合わせてください。CVA の既定値は「望ましい分析精度」（0.5×CVI）で、自施設の実測 CV に置き換えると RCV が正確になります。</p>
+    </form>
+  </details>
+
+  <details class="panel" id="dataPanel">
+    <summary>データの書き出し・読み込み</summary>
+    <p class="small muted" style="margin-top:0">記録はこのブラウザ内だけに保存されます。別の端末で続けるときは、JSON をコピーして移してください。氏名・ID など個人を特定できる情報は入力しないでください。</p>
+    <textarea id="jsonBox" spellcheck="false" aria-label="JSON"></textarea>
+    <div class="rowbtn">
+      <button type="button" id="copyJson">現在のデータを JSON でコピー</button>
+      <button type="button" id="importJson">上の JSON を「自分の記録」に読み込む</button>
+      <span id="clearWrap"><button type="button" class="danger" id="clearMine">自分の記録を全消去</button></span>
+      <span class="msg" id="dataMsg" role="status"></span>
+    </div>
+  </details>
+
+  <footer>
+    <p><b>位置づけ：</b>臨床意思決定の「支援」用の試作です。医療機器としての検証・承認は受けていません。判定は入力値から機械的に出したもので、診断の代わりにはなりません。必ず病歴・身体所見・最新のガイドラインと照らして判断してください。「記憶に基づく」と表示した区分は、一次文献を本実装で直接確認していない値です。</p>
+    <p><b>主な出典</b></p>
+    <ol>
+      <li>Figge J, Jabor A, Kazda A, Fencl V. Anion gap and hypoalbuminemia. Crit Care Med 1998;26:1807–10（補正AG）</li>
+      <li>Figge J, Rossing TH, Fencl V. J Lab Clin Med 1991;117:453–67／Kellum JA, et al. J Crit Care 1995;10:51–5（Stewart, SIG）</li>
+      <li>Story DA, Morimatsu H, Bellomo R. Br J Anaesth 2004;92:54–60（BE 簡易分解）</li>
+      <li>Hillier TA, et al. Am J Med 1999;106:399–403／Katz MA. N Engl J Med 1973;289:843–4（補正Na）</li>
+      <li>Spasovski G, et al. Clinical practice guideline on diagnosis and treatment of hyponatraemia. Eur J Endocrinol 2014;170:G1–47（低Na 区分・補正上限）</li>
+      <li>Verbalis JG, et al. Am J Med 2013;126(10 Suppl 1):S1–42（高リスク例の補正上限 8）</li>
+      <li>UK Kidney Association. Clinical Practice Guideline: Treatment of Acute Hyperkalaemia in Adults. 2023（高K 区分）</li>
+      <li>Kitabchi AE, et al. Diabetes Care 2009;32:1335–43（DKA）</li>
+      <li>Fraser CG. Biological Variation: From Principles to Practice. AACC Press, 2001／EFLM Biological Variation Database（RCV・CVI）</li>
+    </ol>
+  </footer>
+</div>
+<div class="tip" id="tip" hidden></div>
+
+<script src="core.js"></script>
+<script>
+(() => {
+  'use strict';
+  const C = window.EMCore;
+  const $ = (id) => document.getElementById(id);
+  const R = C.round;
+  const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  // ------------------------------------------------------------ 入力項目
+  const FIELDS = [
+    { k: 'pH', label: 'pH', step: '0.01' },
+    { k: 'pCO2', label: 'pCO₂', unit: 'mmHg' },
+    { k: 'HCO3', label: 'HCO₃⁻', unit: 'mmol/L', hint: '空欄なら計算' },
+    { k: 'Na', label: 'Na', unit: 'mmol/L' },
+    { k: 'K', label: 'K', unit: 'mmol/L', step: '0.1' },
+    { k: 'Cl', label: 'Cl', unit: 'mmol/L' },
+    { k: 'Lac', label: '乳酸', unit: 'mmol/L', step: '0.1' },
+    { k: 'Alb', label: 'Alb', unit: 'g/dL', step: '0.1' },
+    { k: 'iCa', label: 'イオン化Ca', unit: 'mmol/L', step: '0.01' },
+    { k: 'tCa', label: '総Ca', unit: 'mg/dL', step: '0.1' },
+    { k: 'Mg', label: 'Mg', unit: 'mg/dL', step: '0.1' },
+    { k: 'P', label: 'P', unit: 'mg/dL', step: '0.1' },
+    { k: 'Glu', label: 'グルコース', unit: 'mg/dL' },
+    { k: 'BUN', label: 'BUN', unit: 'mg/dL' },
+    { k: 'Osm', label: '実測浸透圧', unit: 'mOsm/kg' },
+  ];
+
+  // ------------------------------------------------------------ 例データ（架空）
+  const EXAMPLES = {
+    'ex-dka': [
+      { t: '2026-10-05T02:00', pH: 7.08, pCO2: 16, HCO3: 4.7, Na: 131, K: 5.6, Cl: 96, Lac: 2.1, Alb: 4.2, iCa: 1.18, tCa: 9.6, Mg: 2.3, P: 5.8, Glu: 620, BUN: 32, Osm: 312 },
+      { t: '2026-10-05T06:00', pH: 7.18, pCO2: 22, HCO3: 8.1, Na: 134, K: 4.3, Cl: 101, Lac: 1.6, Alb: 3.9, iCa: 1.16, tCa: 9.1, Mg: 2.1, P: 4.0, Glu: 410, BUN: 29 },
+      { t: '2026-10-05T10:00', pH: 7.26, pCO2: 26, HCO3: 11.5, Na: 137, K: 3.4, Cl: 106, Lac: 1.3, Alb: 3.7, iCa: 1.13, tCa: 8.7, Mg: 1.9, P: 2.6, Glu: 260, BUN: 25 },
+      { t: '2026-10-05T16:00', pH: 7.33, pCO2: 30, HCO3: 15.6, Na: 138, K: 3.6, Cl: 110, Lac: 1.2, Alb: 3.6, iCa: 1.12, tCa: 8.5, Mg: 1.7, P: 1.9, Glu: 190, BUN: 21 },
+      { t: '2026-10-06T02:00', pH: 7.37, pCO2: 34, HCO3: 19.4, Na: 139, K: 3.9, Cl: 111, Lac: 1.0, Alb: 3.6, iCa: 1.14, tCa: 8.6, Mg: 1.8, P: 2.2, Glu: 160, BUN: 18 },
+    ],
+    'ex-hypona': [
+      { t: '2026-10-03T08:00', Na: 116, K: 3.4, Cl: 84, Glu: 98, BUN: 8, Osm: 238 },
+      { t: '2026-10-03T14:00', Na: 119, K: 3.6, Cl: 87, Glu: 96, BUN: 8 },
+      { t: '2026-10-03T20:00', Na: 123, K: 3.7, Cl: 90, Glu: 99, BUN: 7 },
+      { t: '2026-10-04T04:00', Na: 127, K: 3.8, Cl: 94, Glu: 95, BUN: 7 },
+      { t: '2026-10-04T14:00', Na: 128, K: 3.9, Cl: 95, Glu: 97, BUN: 7 },
+    ],
+  };
+
+  // ------------------------------------------------------------ 保存（このブラウザのみ）
+  const KEY = 'electrolyte-monitor.v1';
+  const store = {
+    load() { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; } },
+    save(v) { try { localStorage.setItem(KEY, JSON.stringify(v)); return true; } catch { return false; } },
+  };
+  const saved = store.load();
+  const state = {
+    mine: Array.isArray(saved.mine) ? saved.mine : [],
+    settings: saved.settings || {},
+    dataset: saved.dataset || null,
+    selected: null,
+  };
+  if (!state.dataset) state.dataset = state.mine.length ? 'mine' : 'ex-dka';
+  const persist = () => store.save({ mine: state.mine, settings: state.settings, dataset: state.dataset });
+  const samples = () => (state.dataset === 'mine' ? state.mine : EXAMPLES[state.dataset]);
+
+  // ------------------------------------------------------------ 表示ヘルパ
+  const LV = { crit: '緊急', warn: '要対応', watch: '注意', ok: '改善' };
+  const pill = (lv) => `<span class="pill ${lv}">${lv === 'crit' ? '■' : lv === 'warn' ? '▲' : lv === 'watch' ? '●' : '✓'} ${LV[lv]}</span>`;
+  const fmtT = (ms) => {
+    const d = new Date(ms);
+    const p = (n) => String(n).padStart(2, '0');
+    return `${d.getMonth() + 1}/${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  };
+  const v = (x, d = 1) => (isNum(x) ? R(x, d) : '—');
+  const signed = (x, d = 1) => (isNum(x) ? (x > 0 ? '+' : '') + R(x, d) : '—');
+
+  let series = null;
+
+  function render() {
+    series = C.analyzeSeries(samples(), state.settings);
+    const rows = series.rows;
+    if (state.selected == null || !rows.some((r) => r.ms === state.selected)) state.selected = rows.length ? rows[rows.length - 1].ms : null;
+    $('dataset').value = state.dataset;
+    const ex = state.dataset !== 'mine';
+    $('banner').hidden = !ex && rows.length > 0;
+    $('banner').innerHTML = ex
+      ? '架空の例データを表示しています。実際の患者データではありません。自分の値は「データ」で「自分の記録」を選んで入力してください。'
+      : '「自分の記録」はまだ空です。下の「検査値を追加」から入力してください。';
+    $('saveBtn').disabled = ex;
+    $('saveBtn').title = ex ? '例データには追加できません。「自分の記録」を選んでください' : '';
+    renderAlerts();
+    renderCharts();
+    renderDetail();
+    renderTable();
+  }
+
+  function renderAlerts() {
+    const a = series.alerts;
+    $('alertCount').textContent = a.length ? `${a.length} 件（新しい順）` : '';
+    $('alerts').innerHTML = a.length
+      ? a.map((x) => `<div class="alert lv-${x.level}">${pill(x.level)}<span class="when num">${fmtT(x.ms)}</span><span>${esc(x.text)}${x.src ? ` <span class="src">${esc(x.src)}</span>` : ''}</span></div>`).join('')
+      : '<p class="muted small" style="margin:0">現在のデータで時系列アラートはありません。</p>';
+  }
+
+  // ------------------------------------------------------------ チャート
+  const CHARTS = [
+    { k: 'Na', label: 'Na', unit: 'mmol/L', get: (r) => r.sample.Na, rk: 'Na' },
+    { k: 'K', label: 'K', unit: 'mmol/L', get: (r) => r.sample.K, rk: 'K', d: 1 },
+    { k: 'HCO3', label: 'HCO₃⁻', unit: 'mmol/L', get: (r) => r.result.hco3, rk: 'HCO3' },
+    { k: 'AG', label: '補正AG', unit: 'mEq/L', get: (r) => r.result.cag, band: (s) => [0, s.agUpper] },
+    { k: 'Cl', label: 'Cl', unit: 'mmol/L', get: (r) => r.sample.Cl, rk: 'Cl' },
+    { k: 'pH', label: 'pH', unit: '', get: (r) => r.sample.pH, rk: 'pH', d: 2 },
+    { k: 'P', label: 'P', unit: 'mg/dL', get: (r) => r.sample.P, rk: 'P', d: 1 },
+    { k: 'Mg', label: 'Mg', unit: 'mg/dL', get: (r) => r.sample.Mg, rk: 'Mg', d: 1 },
+    { k: 'tCa', label: '総Ca', unit: 'mg/dL', get: (r) => r.sample.tCa, rk: 'tCa', d: 1 },
+    { k: 'iCa', label: 'イオン化Ca', unit: 'mmol/L', get: (r) => r.sample.iCa, rk: 'iCa', d: 2 },
+    { k: 'SIG', label: 'SIG（SIDa−SIDe）', unit: 'mEq/L', get: (r) => r.result.stewart && r.result.stewart.sig, band: () => [-2, 2] },
+    { k: 'Glu', label: 'グルコース', unit: 'mg/dL', get: (r) => r.sample.Glu, rk: 'Glu', d: 0 },
+  ];
+
+  function niceRange(vals, band) {
+    let lo = Math.min(...vals), hi = Math.max(...vals);
+    if (band) { lo = Math.min(lo, band[0]); hi = Math.max(hi, band[1]); }
+    if (lo === hi) { lo -= 1; hi += 1; }
+    const pad = (hi - lo) * 0.08;
+    return [lo - pad, hi + pad];
+  }
+  function ticks(lo, hi, n = 3) {
+    const raw = (hi - lo) / n, mag = 10 ** Math.floor(Math.log10(raw));
+    const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw) || raw;
+    const out = [];
+    for (let t = Math.ceil(lo / step) * step; t <= hi + 1e-9; t += step) out.push(+t.toFixed(6));
+    return out;
+  }
+
+  function renderCharts() {
+    const rows = series.rows, st = series.settings;
+    const W = 300, H = 118, L = 34, Rm = 8, T = 8, B = 20;
+    const t0 = rows.length ? rows[0].ms : 0, t1 = rows.length ? rows[rows.length - 1].ms : 1;
+    const span = Math.max(t1 - t0, 3.6e6);
+    const html = [];
+    for (const c of CHARTS) {
+      const pts = rows.map((r) => ({ r, y: c.get(r) })).filter((p) => isNum(p.y));
+      if (!pts.length) continue;
+      const rg = c.rk ? st.ranges[c.rk] : null;
+      const band = c.band ? c.band(st) : rg ? [rg.lo, rg.hi] : null;
+      const [lo, hi] = niceRange(pts.map((p) => p.y), band);
+      const x = (ms) => L + (W - L - Rm) * (rows.length > 1 ? (ms - t0) / span : 0.5);
+      const y = (val) => T + (H - T - B) * (1 - (val - lo) / (hi - lo));
+      const yt = ticks(lo, hi);
+      const hrsTotal = span / 3.6e6;
+      const xt = ticks(0, hrsTotal, 4).filter((h) => h >= 0 && h <= hrsTotal);
+      const dk = c.k === 'AG' || c.k === 'SIG' || c.k === 'HCO3' || c.k === 'pH' || c.k === 'iCa' || c.k === 'Glu' ? null : c.k;
+      let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(c.label)} の推移">`;
+      if (band) {
+        const by1 = y(Math.min(band[1], hi)), by0 = y(Math.max(band[0], lo));
+        svg += `<rect class="refband" x="${L}" y="${by1}" width="${W - L - Rm}" height="${Math.max(0, by0 - by1)}"></rect>`;
+      }
+      for (const t of yt) svg += `<line class="grid" x1="${L}" x2="${W - Rm}" y1="${y(t)}" y2="${y(t)}"></line><text class="axis" x="${L - 4}" y="${y(t) + 3}" text-anchor="end">${t}</text>`;
+      if (rows.length > 1) for (const h of xt) svg += `<text class="axis" x="${x(t0 + h * 3.6e6)}" y="${H - 5}" text-anchor="middle">${R(h, 0)}h</text>`;
+      if (pts.length > 1) svg += `<polyline class="line" points="${pts.map((p) => `${x(p.r.ms)},${y(p.y)}`).join(' ')}"></polyline>`;
+      for (const p of pts) {
+        const out = band && (p.y < band[0] || p.y > band[1]);
+        const dd = dk && p.r.deltas[dk];
+        const cx = x(p.r.ms), cy = y(p.y);
+        if (dd && dd.significant) svg += `<circle class="rcv" cx="${cx}" cy="${cy}" r="8"></circle>`;
+        svg += `<circle class="pt${out ? ' out' : ''}${p.r.ms === state.selected ? ' sel' : ''}" cx="${cx}" cy="${cy}" r="4.5"></circle>`;
+        const tipTxt = `${fmtT(p.r.ms)}　${c.label} ${R(p.y, c.d ?? 1)} ${c.unit}` + (dd ? `\n前回比 ${signed(dd.abs, 2)}（${signed(dd.pct, 1)}%、RCV ±${R(dd.rcv, 1)}%）${dd.significant ? ' RCV超' : ''}` : '');
+        svg += `<circle class="hit" cx="${cx}" cy="${cy}" r="12" data-ms="${p.r.ms}" data-tip="${esc(tipTxt)}"></circle>`;
+      }
+      svg += '</svg>';
+      const last = pts[pts.length - 1];
+      html.push(`<div class="chart"><div class="head"><b>${esc(c.label)} <span class="muted small">${c.unit}</span></b><span class="last">${R(last.y, c.d ?? 1)}</span></div>${svg}</div>`);
+    }
+    $('charts').innerHTML = html.join('') || '<p class="muted small">記録がありません。</p>';
+  }
+
+  // ツールチップと選択
+  const tip = $('tip');
+  $('charts').addEventListener('pointerover', (e) => {
+    const t = e.target.closest('.hit'); if (!t) return;
+    tip.textContent = t.dataset.tip; tip.style.whiteSpace = 'pre-line'; tip.hidden = false;
+  });
+  $('charts').addEventListener('pointermove', (e) => {
+    if (tip.hidden) return;
+    const x = Math.min(e.clientX + 12, window.innerWidth - 270);
+    tip.style.left = x + 'px'; tip.style.top = e.clientY + 14 + 'px';
+  });
+  $('charts').addEventListener('pointerout', (e) => { if (e.target.closest('.hit')) tip.hidden = true; });
+  $('charts').addEventListener('click', (e) => {
+    const t = e.target.closest('.hit'); if (!t) return;
+    state.selected = +t.dataset.ms; tip.hidden = true; render();
+  });
+
+  // ------------------------------------------------------------ 解析パネル
+  function renderDetail() {
+    const row = series.rows.find((r) => r.ms === state.selected);
+    if (!row) { $('detailTime').textContent = ''; $('detailBody').innerHTML = '<p class="muted small">記録を選ぶと解析を表示します。</p>'; return; }
+    const s = row.sample, d = row.result;
+    $('detailTime').textContent = fmtT(row.ms);
+    const parts = [];
+
+    if (d.warnings.length) parts.push(`<div class="section">${d.warnings.map((w) => `<div class="alert lv-warn">${pill('warn')}<span></span><span>${esc(w)}</span></div>`).join('')}</div>`);
+
+    if (d.acidBase) {
+      const ab = d.acidBase;
+      const prim = ab.primary.length ? ab.primary.join(' ＋ ') : '一次障害なし（pH 基準内）';
+      const comp = ab.comp ? `<dt>${esc(ab.comp.label)}</dt><dd>${ab.comp.expected != null ? R(ab.comp.expected) + '（' : ''}${R(ab.comp.range[0])}–${R(ab.comp.range[1])}${ab.comp.expected != null ? '）' : ''} ${ab.comp.unit}</dd>` : '';
+      parts.push(`<div class="section"><h3>酸塩基（Boston法）</h3>
+        <div class="dx"><span class="p">${esc(prim)}</span>${ab.secondary.map((x) => `<span>＋ ${esc(x)}</span>`).join('')}${ab.flags.map((x) => `<span class="muted small">${esc(x)}</span>`).join('')}</div>
+        <dl class="kv">
+          <dt>pH / pCO₂</dt><dd>${v(s.pH, 2)} / ${v(s.pCO2)}</dd>
+          <dt>HCO₃⁻${isNum(s.HCO3) ? '' : '（計算）'}</dt><dd>${v(d.hco3)}　<span class="muted">H-H 計算 ${v(d.hco3Calc)}</span></dd>
+          <dt>AG / 補正AG</dt><dd>${v(d.ag)} / ${v(d.cag)}</dd>
+          ${isNum(ab.deltaRatio) ? `<dt>ΔΔ（ΔAG/ΔHCO₃⁻）</dt><dd>${v(ab.deltaRatio, 2)}</dd>` : ''}
+          ${comp}
+          <dt>SBE</dt><dd>${signed(d.sbe)} mEq/L</dd>
+        </dl></div>`);
+    }
+
+    if (d.stewart) {
+      const S = d.stewart;
+      parts.push(`<div class="section"><h3>Stewart（Figge 簡易式）</h3>
+        <dl class="kv">
+          <dt>SIDa</dt><dd>${v(S.sidA)}</dd>
+          <dt>SIDe</dt><dd>${v(S.sidE)}　<span class="muted">HCO₃⁻ ${v(d.hco3)} ＋ Alb ${v(S.albCharge)} ＋ Pi ${v(S.piCharge)}</span></dd>
+          <dt>SIG（SIDa−SIDe）</dt><dd>${isNum(S.sig) ? signed(S.sig) + (S.sig > 2 ? '　未測定陰イオンの増加を示唆' : '') : '—'}</dd>
+        </dl>
+        ${S.notes.length ? `<p class="small muted" style="margin:0">${S.notes.map(esc).join('／')}</p>` : ''}
+        <p class="small muted" style="margin:0">SIG の絶対値は算出法と較正に左右されます。単独の値より推移で見てください。</p></div>`);
+    }
+
+    if (d.beParts) {
+      const p = d.beParts;
+      const items = [['Na–Cl（自由水・Cl）', p.naCl], ['アルブミン', p.alb], ['乳酸', p.lac], ['その他の未測定陰イオン', p.other], ['合計 SBE', p.sbe]];
+      const m = Math.max(10, ...items.map((i) => Math.abs(i[1])));
+      parts.push(`<div class="section"><h3>BE 分解（Story 簡易法）</h3><div class="bars">${items.map(([lab, val]) => {
+        const w = Math.abs(val) / m * 50;
+        return `<div class="bar"><span>${lab}</span><span class="track"><span class="mid"></span><span class="fill ${val < 0 ? 'neg' : 'pos'}" style="${val < 0 ? `right:50%` : `left:50%`};width:${w}%"></span></span><span class="v">${signed(val)}</span></div>`;
+      }).join('')}</div><p class="small muted" style="margin:0">負＝酸性化、正＝アルカリ化の寄与（mEq/L）</p></div>`);
+    }
+
+    const f = d.findings;
+    const extra = [];
+    if (isNum(d.correctedNa) && isNum(s.Glu) && s.Glu > 100) extra.push(['補正Na', `${v(d.correctedNa)}（係数 ${series.settings.glucoseFactor}）`]);
+    if (isNum(d.calcOsm)) extra.push(['計算浸透圧', `${v(d.calcOsm)}${isNum(d.osmGap) ? `　浸透圧ギャップ ${signed(d.osmGap)}` : ''}`]);
+    if (isNum(d.correctedCa) && d.correctedCa !== s.tCa) extra.push(['補正Ca（Payne）', v(d.correctedCa)]);
+    if (isNum(d.naCorrCl)) extra.push(['Na補正Cl', v(d.naCorrCl)]);
+    if (row.naRise24h) extra.push([`24h 窓の${row.naRise24h.corrected ? '補正' : ''}Na 上昇`, `${signed(row.naRise24h.rise)}（最低値 ${row.naRise24h.nadir} から ${R(row.naRise24h.hrs)}h、上限 ${row.naRise24h.limit}）`]);
+    if (isNum(row.naFallRate)) extra.push(['Na 低下速度', `${signed(row.naFallRate)} /24h（成人の上限は議論中）`]);
+    parts.push(`<div class="section"><h3>電解質</h3>
+      ${f.length ? `<ul class="find">${f.map((x) => `<li>${pill(x.level)}<span>${esc(x.text)}${x.src ? `<span class="src">${esc(x.src)}</span>` : ''}</span></li>`).join('')}</ul>` : '<p class="small muted" style="margin:0">入力された電解質に基準範囲外の値はありません。</p>'}
+      ${extra.length ? `<dl class="kv">${extra.map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('')}</dl>` : ''}
+    </div>`);
+
+    $('detailBody').innerHTML = parts.join('');
+  }
+
+  // ------------------------------------------------------------ 表
+  function renderTable() {
+    const rows = series.rows, st = series.settings;
+    const cols = FIELDS.filter((f) => rows.some((r) => isNum(r.sample[f.k])));
+    const ex = state.dataset !== 'mine';
+    let h = `<thead><tr><th>日時</th>${cols.map((c) => `<th>${c.label}</th>`).join('')}<th>補正AG</th><th>SIG</th>${ex ? '' : '<th></th>'}</tr></thead><tbody>`;
+    for (const r of rows) {
+      h += `<tr data-ms="${r.ms}" class="${r.ms === state.selected ? 'sel' : ''}"><td>${fmtT(r.ms)}</td>`;
+      for (const c of cols) {
+        const val = r.sample[c.k], rg = st.ranges[c.k];
+        const cls = isNum(val) && rg ? (val < rg.lo ? 'lo' : val > rg.hi ? 'hi' : '') : '';
+        const dd = r.deltas[c.k];
+        h += `<td class="${cls}">${isNum(val) ? val : ''}${dd ? `<span class="d${dd.significant ? ' sig' : ''}">${signed(dd.abs, 2)}</span>` : ''}</td>`;
+      }
+      h += `<td>${v(r.result.cag)}</td><td>${r.result.stewart ? v(r.result.stewart.sig) : ''}</td>`;
+      if (!ex) h += `<td><button type="button" class="danger small" data-del="${r.index}" aria-label="${fmtT(r.ms)} の記録を削除">削除</button></td>`;
+      h += '</tr>';
+    }
+    h += '</tbody>';
+    $('table').innerHTML = rows.length ? h : '<tbody><tr><td class="muted">記録がありません</td></tr></tbody>';
+  }
+  $('table').addEventListener('click', (e) => {
+    const del = e.target.closest('[data-del]');
+    if (del) {
+      if (del.dataset.confirm) {
+        state.mine.splice(+del.dataset.del, 1); persist(); render();
+      } else { del.dataset.confirm = '1'; del.textContent = 'もう一度押すと削除'; }
+      return;
+    }
+    const tr = e.target.closest('tr[data-ms]');
+    if (tr) { state.selected = +tr.dataset.ms; render(); }
+  });
+
+  // ------------------------------------------------------------ 入力フォーム
+  const nowLocal = () => { const d = new Date(); d.setSeconds(0, 0); return new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 16); };
+  $('formFields').innerHTML = `<div class="f wide"><label for="in-t">採取日時</label><input id="in-t" type="datetime-local" required></div>` +
+    FIELDS.map((f) => `<div class="f"><label for="in-${f.k}">${f.label} ${f.unit ? `<small>${f.unit}</small>` : ''}${f.hint ? ` <small>${f.hint}</small>` : ''}</label><input id="in-${f.k}" type="number" inputmode="decimal" step="${f.step || 'any'}"></div>`).join('');
+  $('in-t').value = nowLocal();
+  $('entry').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const msg = $('formMsg');
+    if (state.dataset !== 'mine') { msg.className = 'msg err'; msg.textContent = '例データには追加できません。「データ」で「自分の記録」を選んでください。'; return; }
+    const t = $('in-t').value;
+    if (!t) { msg.className = 'msg err'; msg.textContent = '採取日時を入力してください。'; return; }
+    const s = { t };
+    for (const f of FIELDS) { const raw = $('in-' + f.k).value; if (raw !== '') s[f.k] = parseFloat(raw); }
+    if (Object.keys(s).length < 2) { msg.className = 'msg err'; msg.textContent = '検査値を1つ以上入力してください。'; return; }
+    if (isNum(s.pH) && (s.pH < 6.5 || s.pH > 8)) { msg.className = 'msg err'; msg.textContent = 'pH が 6.5–8.0 の範囲外です。入力を確認してください。'; return; }
+    state.mine.push(s);
+    state.selected = Date.parse(t);
+    const ok = persist();
+    msg.className = 'msg';
+    msg.textContent = ok ? `${fmtT(Date.parse(t))} の記録を追加しました。` : '追加しました（このブラウザでは保存できないため、ページを閉じると消えます）。';
+    render();
+  });
+  $('clearForm').addEventListener('click', () => { FIELDS.forEach((f) => ($('in-' + f.k).value = '')); $('in-t').value = nowLocal(); $('formMsg').textContent = ''; });
+
+  // ------------------------------------------------------------ 設定
+  const RANGE_KEYS = ['pH', 'pCO2', 'HCO3', 'Na', 'K', 'Cl', 'Lac', 'Alb', 'iCa', 'tCa', 'Mg', 'P', 'Glu'];
+  const LABEL = Object.fromEntries(FIELDS.map((f) => [f.k, f.label]));
+  function fillSettings() {
+    const st = C.mergeSettings(state.settings);
+    ['agRef', 'agUpper', 'glucoseFactor', 'naLimit24h'].forEach((k) => ($('s-' + k).value = st[k]));
+    $('s-naHighRisk').value = st.naHighRisk ? '1' : '0';
+    $('rangeFields').innerHTML = RANGE_KEYS.map((k) => {
+      const r = st.ranges[k];
+      return `<div class="f"><label for="r-${k}-lo">${LABEL[k]} <small>${r.unit}${r.src === 'memory' ? '・要確認' : ''}</small></label><div style="display:flex;gap:4px"><input id="r-${k}-lo" type="number" step="any" value="${r.lo}" aria-label="${LABEL[k]} 下限"><input id="r-${k}-hi" type="number" step="any" value="${r.hi}" aria-label="${LABEL[k]} 上限"></div></div>`;
+    }).join('');
+    $('bvFields').innerHTML = Object.keys(st.bv).map((k) => {
+      const b = st.bv[k];
+      return `<div class="f"><label for="b-${k}-cvi">${LABEL[k]} <small>RCV ±${R(C.rcv(b.cvi, b.cva, st.rcvZ), 1)}%</small></label><div style="display:flex;gap:4px"><input id="b-${k}-cvi" type="number" step="any" value="${b.cvi}" aria-label="${LABEL[k]} CVI"><input id="b-${k}-cva" type="number" step="any" value="${b.cva}" aria-label="${LABEL[k]} CVA"></div></div>`;
+    }).join('');
+  }
+  $('settings').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const num = (id) => parseFloat($(id).value);
+    const next = { ranges: {}, bv: {} };
+    for (const k of ['agRef', 'agUpper', 'glucoseFactor', 'naLimit24h']) { const x = num('s-' + k); if (isNum(x)) next[k] = x; }
+    next.naHighRisk = $('s-naHighRisk').value === '1';
+    for (const k of RANGE_KEYS) {
+      const lo = num(`r-${k}-lo`), hi = num(`r-${k}-hi`);
+      if (isNum(lo) && isNum(hi) && lo < hi) next.ranges[k] = { lo, hi };
+    }
+    for (const k of Object.keys(C.DEFAULT_SETTINGS.bv)) {
+      const cvi = num(`b-${k}-cvi`), cva = num(`b-${k}-cva`);
+      if (isNum(cvi) && isNum(cva) && cvi >= 0 && cva >= 0) next.bv[k] = { cvi, cva };
+    }
+    state.settings = next;
+    const ok = persist();
+    fillSettings(); render();
+    $('settingsMsg').className = 'msg';
+    $('settingsMsg').textContent = ok ? '設定を保存しました。' : '設定を反映しました（このブラウザでは保存できません）。';
+  });
+  $('resetSettings').addEventListener('click', () => { state.settings = {}; persist(); fillSettings(); render(); $('settingsMsg').textContent = '既定値に戻しました。'; });
+
+  // ------------------------------------------------------------ 書き出し・読み込み
+  $('copyJson').addEventListener('click', () => {
+    const json = JSON.stringify({ format: 'electrolyte-monitor.v1', samples: samples(), settings: state.settings }, null, 1);
+    $('jsonBox').value = json;
+    const done = () => { $('dataMsg').className = 'msg'; $('dataMsg').textContent = 'コピーしました。'; };
+    const fail = () => { $('jsonBox').select(); $('dataMsg').className = 'msg'; $('dataMsg').textContent = 'クリップボードに書けないため、上の欄を選択しました。手動でコピーしてください。'; };
+    try { navigator.clipboard.writeText(json).then(done, fail); } catch { fail(); }
+  });
+  $('importJson').addEventListener('click', () => {
+    const msg = $('dataMsg');
+    try {
+      const obj = JSON.parse($('jsonBox').value);
+      const list = Array.isArray(obj) ? obj : obj.samples;
+      if (!Array.isArray(list)) throw new Error('samples 配列がありません');
+      const clean = list.filter((s) => s && typeof s.t === 'string' && Number.isFinite(Date.parse(s.t))).map((s) => {
+        const o = { t: s.t };
+        for (const f of FIELDS) if (isNum(s[f.k])) o[f.k] = s[f.k];
+        return o;
+      });
+      if (!clean.length) throw new Error('有効な記録がありません（各記録に t: 日時 が必要です）');
+      state.mine = clean;
+      if (obj.settings && typeof obj.settings === 'object') state.settings = obj.settings;
+      state.dataset = 'mine'; state.selected = null;
+      persist(); fillSettings(); render();
+      msg.className = 'msg'; msg.textContent = `${clean.length} 件を「自分の記録」に読み込みました。`;
+    } catch (err) {
+      msg.className = 'msg err'; msg.textContent = '読み込めませんでした：' + err.message;
+    }
+  });
+  $('clearMine').addEventListener('click', (e) => {
+    const b = e.currentTarget;
+    if (b.dataset.confirm) {
+      state.mine = []; persist(); b.dataset.confirm = ''; b.textContent = '自分の記録を全消去'; render();
+      $('dataMsg').className = 'msg'; $('dataMsg').textContent = '自分の記録を消去しました。';
+    } else { b.dataset.confirm = '1'; b.textContent = 'もう一度押すと全消去'; }
+  });
+
+  $('dataset').addEventListener('change', (e) => { state.dataset = e.target.value; state.selected = null; persist(); render(); });
+
+  fillSettings();
+  render();
+})();
+</script>
